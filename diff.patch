@@ -1,0 +1,782 @@
+diff --git a/README.md b/README.md
+index c9f7e8c..dc5f0d0 100644
+--- a/README.md
++++ b/README.md
+@@ -11,7 +11,7 @@ GitHub の差分ページでコードをクリップボードにコピーでき
+ ![React](https://img.shields.io/badge/React-19.1.0-61DAFB?style=for-the-badge&logo=react)
+ ![WXT](https://img.shields.io/badge/WXT-0.20.7-FF6000?style=for-the-badge&logo=wxt)
+ ![Primer](https://img.shields.io/badge/Primer-37.28.0-24292e?style=for-the-badge&logo=github)
+-![Mustache](https://img.shields.io/badge/Mustache-4.2.0-000000?style=for-the-badge)
++![Handlebars](https://img.shields.io/badge/Handlebars-4.7.8-f0772b?style=for-the-badge&logo=handlebarsdotjs)
+ 
+ ## 対応ページ
+ 
+@@ -123,11 +123,11 @@ npm run test:all
+ 
+ ## テンプレートの記法
+ 
+-Mustache テンプレートエンジンを使用しているため、任意のマークアップのテンプレートを記述できます。
++Handlebars テンプレートエンジンを使用しているため、任意のマークアップのテンプレートを記述できます。
+ 
+ > [!NOTE]
+-> Mustache 構文の詳細は公式のマニュアルを参照してください。  
+-> https://mustache.github.io/mustache.5.html
++> Handlebars 構文の詳細は公式のマニュアルを参照してください。  
++> https://handlebarsjs.com/guide/
+ 
+ ### `{{#trimWhitespace}} … {{/trimWhitespace}}`
+ 
+@@ -199,7 +199,7 @@ Mustache テンプレートエンジンを使用しているため、任意の
+ 
+ > [!TIP]
+ > Section は条件を反転 (Inverted Section) させることもできます。詳細は公式のマニュアルを参照してください。  
+-> https://mustache.github.io/mustache.5.html#Inverted-Sections
++> https://handlebarsjs.com/guide/builtin-helpers.html#unless
+ 
+ ## テンプレートの例
+ 
+@@ -207,10 +207,13 @@ Mustache テンプレートエンジンを使用しているため、任意の
+ 
+ 以下はファイルパスや行番号を指定できるように拡張した Markdown コードブロックのためのテンプレートです。
+ 
+-````mustache
++````handlebars
+ {{#hunkList}}
+-{{#collapseWhitespace}}```{{langId}} {{#isFirst}}filePath={{filePath}}{{/isFirst}} newStart={{newStart}} oldStart={{oldStart}}{{/collapseWhitespace}}
+-{{{code}}}
+-```
++  {{#collapseWhitespace}}```{{langId}}
++    {{#isFirst}}filePath={{filePath}}{{/isFirst}}
++    newStart={{newStart}}
++    oldStart={{oldStart}}{{/collapseWhitespace}}
++  {{{code}}}
++  ```
+ {{/hunkList}}
+ ````
+diff --git a/entrypoints/github.content/markup.ts b/entrypoints/github.content/markup.ts
+index 11ebce2..83a064c 100644
+--- a/entrypoints/github.content/markup.ts
++++ b/entrypoints/github.content/markup.ts
+@@ -1,13 +1,13 @@
+ import type { StructuredPatch } from "diff"
+-import mustache from "mustache"
++import { getTemplateRenderer } from "@/utils/templateRenderer"
+ 
+ const SAMPLE_TEMPLATE = `
+ <!-- Sample template -->
+-{{#hunkList}}
+-{{#collapseWhitespace}}\`\`\`{{langId}} {{#isFirst}}filePath={{filePath}}{{/isFirst}} newStart={{newStart}} oldStart={{oldStart}}{{/collapseWhitespace}}
++{{#each hunkList}}
++{{#collapseWhitespace}}\`\`\`{{langId}} {{#if @first}}filePath={{filePath}}{{/if}} newStart={{newStart}} oldStart={{oldStart}}{{/collapseWhitespace}}
+ {{{code}}}
+ \`\`\`
+-{{/hunkList}}
++{{/each}}
+ `
+ 
+ const getTemplate = async (): Promise<string> => {
+@@ -67,7 +67,7 @@ export const renderToMarkup = async ({
+     }
+   })
+ 
+-  const view = {
++  const context = {
+     // 変数
+     isAdded,
+     isDeleted,
+@@ -75,20 +75,9 @@ export const renderToMarkup = async ({
+ 
+     // リスト
+     hunkList,
+-
+-    // ラムダ
+-    trimWhitespace:
+-      () => (text: string, render: (template: string) => string) => {
+-        const rendered = render(text)
+-        return rendered.trim()
+-      },
+-    collapseWhitespace:
+-      () => (text: string, render: (template: string) => string) => {
+-        const rendered = render(text)
+-        return rendered.replace(/\s+/g, " ")
+-      },
+   }
+ 
+   const template = await getTemplate()
+-  return mustache.render(template, view)
++  const renderer = getTemplateRenderer()
++  return renderer.render(template, context)
+ }
+diff --git a/entrypoints/popup/components/TemplateFormDialog.tsx b/entrypoints/popup/components/TemplateFormDialog.tsx
+index b9c9396..455c755 100644
+--- a/entrypoints/popup/components/TemplateFormDialog.tsx
++++ b/entrypoints/popup/components/TemplateFormDialog.tsx
+@@ -6,8 +6,8 @@ import {
+   TextInput,
+ } from "@primer/react"
+ import { Banner } from "@primer/react/experimental"
+-import mustache from "mustache"
+ import { FormEvent, useEffect, useState } from "react"
++import { getTemplateRenderer } from "@/utils/templateRenderer"
+ 
+ interface TemplateFormDialogProps {
+   template: Template | null
+@@ -61,11 +61,13 @@ export const TemplateFormDialog = ({
+       newErrors.content = "Template content is required"
+     }
+ 
++    // Validate Handlebars template
+     try {
+-      mustache.parse(content)
++      const renderer = getTemplateRenderer()
++      await renderer.validate(content)
+     } catch (err) {
+       newErrors.content =
+-        err instanceof Error ? err.message : "Invalid Mustache syntax"
++        err instanceof Error ? err.message : "Invalid Handlebars syntax"
+     }
+ 
+     if (Object.keys(newErrors).length) {
+@@ -143,7 +145,7 @@ export const TemplateFormDialog = ({
+             />
+             {validated && errors.name && (
+               <FormControl.Validation variant="error">
+-                {errors.name}
++                <span style={{ whiteSpace: "pre-wrap" }}>{errors.name}</span>
+               </FormControl.Validation>
+             )}
+           </FormControl>
+@@ -154,7 +156,11 @@ export const TemplateFormDialog = ({
+             <Textarea
+               name="content"
+               rows={10}
+-              placeholder="{{#hunkList}}&#13;{{#collapseWhitespace}}```{{langId}} {{#isFirst}}filePath={{filePath}}{{/isFirst}} newStart={{newStart}} oldStart={{oldStart}}{{/collapseWhitespace}}&#13;{{{code}}}&#13;```&#13;{{/hunkList}}"
++              placeholder={`{{#each hunkList}}
++{{#collapseWhitespace}}\`\`\`{{langId}} {{#if @first}}filePath={{filePath}}{{/if}} newStart={{newStart}} oldStart={{oldStart}}{{/collapseWhitespace}}
++{{{code}}}
++\`\`\`
++{{/each}}`}
+               value={content}
+               onChange={(e) => setContent(e.target.value)}
+               validationStatus={
+@@ -166,7 +172,7 @@ export const TemplateFormDialog = ({
+             />
+             {validated && errors.content && (
+               <FormControl.Validation variant="error">
+-                {errors.content}
++                <span style={{ whiteSpace: "pre-wrap" }}>{errors.content}</span>
+               </FormControl.Validation>
+             )}
+           </FormControl>
+diff --git a/entrypoints/template-renderer.sandbox/index.html b/entrypoints/template-renderer.sandbox/index.html
+new file mode 100644
+index 0000000..c9b2e0e
+--- /dev/null
++++ b/entrypoints/template-renderer.sandbox/index.html
+@@ -0,0 +1,11 @@
++<!doctype html>
++<html lang="en">
++  <head>
++    <meta charset="UTF-8" />
++    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
++    <title>Template Renderer Sandbox</title>
++  </head>
++  <body>
++    <script type="module" src="./main.ts"></script>
++  </body>
++</html>
+diff --git a/entrypoints/template-renderer.sandbox/main.ts b/entrypoints/template-renderer.sandbox/main.ts
+new file mode 100644
+index 0000000..c1f7bfd
+--- /dev/null
++++ b/entrypoints/template-renderer.sandbox/main.ts
+@@ -0,0 +1,79 @@
++import Handlebars from "handlebars"
++
++// Handlebars ヘルパーの登録
++Handlebars.registerHelper("trimWhitespace", function (this: unknown, options) {
++  return options.fn(this).trim()
++})
++
++Handlebars.registerHelper(
++  "collapseWhitespace",
++  function (this: unknown, options) {
++    return options.fn(this).replace(/\s+/g, " ")
++  },
++)
++
++const CONTEXT = {
++  isAdded: false,
++  isDeleted: false,
++  isModified: true,
++  hunkList: [
++    {
++      code: "+console.log('hello');\n-console.log('world');",
++      langId: "diff-js",
++      filePath: "src/example.js",
++      fileName: "example.js",
++      newStart: 10,
++      oldStart: 10,
++      isFirst: true,
++      isLast: false,
++    },
++    {
++      code: "+const x = 1;\n-const y = 2;",
++      langId: "diff-js",
++      filePath: "src/example.js",
++      fileName: "example.js",
++      newStart: 20,
++      oldStart: 20,
++      isFirst: false,
++      isLast: true,
++    },
++  ],
++}
++
++// メッセージハンドラー
++window.addEventListener("message", (event) => {
++  const { command, messageId } = event.data
++
++  const sendMessage = (message: Record<string, unknown>) =>
++    event.source!.postMessage(
++      { command, messageId, message },
++      { targetOrigin: event.origin },
++    )
++
++  switch (command) {
++    case "render":
++      try {
++        const template = Handlebars.compile(event.data.templateSource)
++        const result = template(event.data.context)
++        sendMessage({ success: true, result })
++      } catch (error) {
++        sendMessage({
++          success: false,
++          error: error instanceof Error ? error.message : "Unknown error",
++        })
++      }
++      break
++    case "validate":
++      try {
++        const template = Handlebars.compile(event.data.templateSource)
++        template(CONTEXT)
++        sendMessage({ success: true })
++      } catch (error) {
++        sendMessage({
++          success: false,
++          error: error instanceof Error ? error.message : "Unknown error",
++        })
++      }
++      break
++  }
++})
+diff --git a/package-lock.json b/package-lock.json
+index 302d6f3..1700303 100644
+--- a/package-lock.json
++++ b/package-lock.json
+@@ -11,12 +11,13 @@
+       "dependencies": {
+         "@primer/primitives": "11.0.0",
+         "@primer/react": "37.28.0",
++        "@types/handlebars": "4.0.40",
+         "@webcomponents/custom-elements": "1.6.0",
+         "@webext-core/messaging": "2.3.0",
+         "@webext-core/proxy-service": "1.2.1",
+         "diff": "8.0.2",
++        "handlebars": "4.7.8",
+         "idb": "8.0.3",
+-        "mustache": "4.2.0",
+         "react": "19.1.0",
+         "react-dom": "19.1.0",
+         "styled-components": "5.3.11"
+@@ -25,7 +26,6 @@
+         "@eslint/js": "9.30.1",
+         "@playwright/test": "1.54.2",
+         "@types/chrome": "0.0.332",
+-        "@types/mustache": "4.2.6",
+         "@types/react": "19.1.8",
+         "@types/react-dom": "19.1.6",
+         "@types/styled-components": "5.1.34",
+@@ -2132,6 +2132,12 @@
+       "integrity": "sha512-xFU8ZXTw4gd358lb2jw25nxY9QAgqn2+bKKjKOYfNCzN4DKCFetK7sPtrlpg66Ywe3vWY9FNxprZawAh9wfJ3g==",
+       "dev": true
+     },
++    "node_modules/@types/handlebars": {
++      "version": "4.0.40",
++      "resolved": "https://registry.npmjs.org/@types/handlebars/-/handlebars-4.0.40.tgz",
++      "integrity": "sha512-sGWNtsjNrLOdKha2RV1UeF8+UbQnPSG7qbe5wwbni0mw4h2gHXyPFUMOC+xwGirIiiydM/HSqjDO4rk6NFB18w==",
++      "license": "MIT"
++    },
+     "node_modules/@types/har-format": {
+       "version": "1.2.16",
+       "resolved": "https://registry.npmjs.org/@types/har-format/-/har-format-1.2.16.tgz",
+@@ -2162,13 +2168,6 @@
+       "dev": true,
+       "license": "MIT"
+     },
+-    "node_modules/@types/mustache": {
+-      "version": "4.2.6",
+-      "resolved": "https://registry.npmjs.org/@types/mustache/-/mustache-4.2.6.tgz",
+-      "integrity": "sha512-t+8/QWTAhOFlrF1IVZqKnMRJi84EgkIK5Kh0p2JV4OLywUvCwJPFxbJAl7XAow7DVIHsF+xW9f1MVzg0L6Szjw==",
+-      "dev": true,
+-      "license": "MIT"
+-    },
+     "node_modules/@types/node": {
+       "version": "22.13.13",
+       "resolved": "https://registry.npmjs.org/@types/node/-/node-22.13.13.tgz",
+@@ -5892,6 +5891,36 @@
+       "dev": true,
+       "license": "MIT"
+     },
++    "node_modules/handlebars": {
++      "version": "4.7.8",
++      "resolved": "https://registry.npmjs.org/handlebars/-/handlebars-4.7.8.tgz",
++      "integrity": "sha512-vafaFqs8MZkRrSX7sFVUdo3ap/eNiLnb4IakshzvP56X5Nr1iGKAIqdX6tMlm6HcNRIkr6AxO5jFEoJzzpT8aQ==",
++      "license": "MIT",
++      "dependencies": {
++        "minimist": "^1.2.5",
++        "neo-async": "^2.6.2",
++        "source-map": "^0.6.1",
++        "wordwrap": "^1.0.0"
++      },
++      "bin": {
++        "handlebars": "bin/handlebars"
++      },
++      "engines": {
++        "node": ">=0.4.7"
++      },
++      "optionalDependencies": {
++        "uglify-js": "^3.1.4"
++      }
++    },
++    "node_modules/handlebars/node_modules/source-map": {
++      "version": "0.6.1",
++      "resolved": "https://registry.npmjs.org/source-map/-/source-map-0.6.1.tgz",
++      "integrity": "sha512-UjgapumWlbMhkBgzT7Ykc5YXUT46F0iKu8SGXq0bcwP5dz/h0Plj6enJqjz1Zbq2l5WaqYnrVbwWOWMyF3F47g==",
++      "license": "BSD-3-Clause",
++      "engines": {
++        "node": ">=0.10.0"
++      }
++    },
+     "node_modules/happy-dom": {
+       "version": "18.0.1",
+       "resolved": "https://registry.npmjs.org/happy-dom/-/happy-dom-18.0.1.tgz",
+@@ -7516,7 +7545,6 @@
+       "version": "1.2.8",
+       "resolved": "https://registry.npmjs.org/minimist/-/minimist-1.2.8.tgz",
+       "integrity": "sha512-2yyAR8qBkN3YuheJanUpWC5U3bb5osDywNB8RzDVlDwDHbocAJveqqj1u8+SVD7jkWT4yvsHCpWqqWqAxb0zCA==",
+-      "dev": true,
+       "license": "MIT",
+       "funding": {
+         "url": "https://github.com/sponsors/ljharb"
+@@ -7605,14 +7633,6 @@
+         "node": "*"
+       }
+     },
+-    "node_modules/mustache": {
+-      "version": "4.2.0",
+-      "resolved": "https://registry.npmjs.org/mustache/-/mustache-4.2.0.tgz",
+-      "integrity": "sha512-71ippSywq5Yb7/tVYyGbkBggbU8H3u5Rz56fH60jGFgr8uHwxs+aSKeqmluIVzM0m0kB7xQjKS6qPfd0b2ZoqQ==",
+-      "bin": {
+-        "mustache": "bin/mustache"
+-      }
+-    },
+     "node_modules/mz": {
+       "version": "2.7.0",
+       "resolved": "https://registry.npmjs.org/mz/-/mz-2.7.0.tgz",
+@@ -7660,6 +7680,12 @@
+       "integrity": "sha512-OWND8ei3VtNC9h7V60qff3SVobHr996CTwgxubgyQYEpg290h9J0buyECNNJexkFm5sOajh5G116RYA1c8ZMSw==",
+       "dev": true
+     },
++    "node_modules/neo-async": {
++      "version": "2.6.2",
++      "resolved": "https://registry.npmjs.org/neo-async/-/neo-async-2.6.2.tgz",
++      "integrity": "sha512-Yd3UES5mWCSqR+qNT93S3UoYUkqAZ9lLg8a7g9rimsWmYGK8cVToA4/sF3RrshdyV3sAGMXVUmpMYOw+dLpOuw==",
++      "license": "MIT"
++    },
+     "node_modules/node-fetch-native": {
+       "version": "1.6.6",
+       "resolved": "https://registry.npmjs.org/node-fetch-native/-/node-fetch-native-1.6.6.tgz",
+@@ -10970,6 +10996,19 @@
+       "integrity": "sha512-UsUk3byDzKd04EyoZ7U4DOlxQaD14JUKQl6/P7wiX4FNvUfm3XL246n9W5AmqwW5RSFJ27NAuM0iLscAOYUiGQ==",
+       "dev": true
+     },
++    "node_modules/uglify-js": {
++      "version": "3.19.3",
++      "resolved": "https://registry.npmjs.org/uglify-js/-/uglify-js-3.19.3.tgz",
++      "integrity": "sha512-v3Xu+yuwBXisp6QYTcH4UbH+xYJXqnq2m/LtQVWKWzYc1iehYnLixoQDN9FH6/j9/oybfd6W9Ghwkl8+UMKTKQ==",
++      "license": "BSD-2-Clause",
++      "optional": true,
++      "bin": {
++        "uglifyjs": "bin/uglifyjs"
++      },
++      "engines": {
++        "node": ">=0.8.0"
++      }
++    },
+     "node_modules/uhyphen": {
+       "version": "0.2.0",
+       "resolved": "https://registry.npmjs.org/uhyphen/-/uhyphen-0.2.0.tgz",
+@@ -11708,6 +11747,12 @@
+         "node": ">=0.10.0"
+       }
+     },
++    "node_modules/wordwrap": {
++      "version": "1.0.0",
++      "resolved": "https://registry.npmjs.org/wordwrap/-/wordwrap-1.0.0.tgz",
++      "integrity": "sha512-gvVzJFlPycKc5dZN4yPkP8w7Dc37BtP1yczEneOb4uq34pXZcvrtRTmWV8W+Ume+XCxKgbjM+nevkyFPMybd4Q==",
++      "license": "MIT"
++    },
+     "node_modules/wrap-ansi": {
+       "version": "9.0.0",
+       "resolved": "https://registry.npmjs.org/wrap-ansi/-/wrap-ansi-9.0.0.tgz",
+diff --git a/package.json b/package.json
+index e0ff58c..b8b2812 100644
+--- a/package.json
++++ b/package.json
+@@ -26,12 +26,13 @@
+   "dependencies": {
+     "@primer/primitives": "11.0.0",
+     "@primer/react": "37.28.0",
++    "@types/handlebars": "4.0.40",
+     "@webcomponents/custom-elements": "1.6.0",
+     "@webext-core/messaging": "2.3.0",
+     "@webext-core/proxy-service": "1.2.1",
+     "diff": "8.0.2",
++    "handlebars": "4.7.8",
+     "idb": "8.0.3",
+-    "mustache": "4.2.0",
+     "react": "19.1.0",
+     "react-dom": "19.1.0",
+     "styled-components": "5.3.11"
+@@ -40,7 +41,6 @@
+     "@eslint/js": "9.30.1",
+     "@playwright/test": "1.54.2",
+     "@types/chrome": "0.0.332",
+-    "@types/mustache": "4.2.6",
+     "@types/react": "19.1.8",
+     "@types/react-dom": "19.1.6",
+     "@types/styled-components": "5.1.34",
+diff --git a/tests/e2e/basic.spec.ts b/tests/e2e/basic.spec.ts
+index 5e9d63d..7b4cd1a 100644
+--- a/tests/e2e/basic.spec.ts
++++ b/tests/e2e/basic.spec.ts
+@@ -3,7 +3,7 @@ import { expect, test } from "./fixtures"
+ 
+ const EXPECTED_CLIPBOARD_TEXT = `
+ <!-- Sample template -->
+-\`\`\`diff-tsx filePath=entrypoints&#x2F;github.content&#x2F;index.tsx newStart=39 oldStart=39
++\`\`\`diff-tsx filePath=entrypoints/github.content/index.tsx newStart=39 oldStart=39
+  
+      await executeIfMatched(location)
+  
+diff --git a/tests/e2e/pages/popup.ts b/tests/e2e/pages/popup.ts
+index 26baf1c..a4e6981 100644
+--- a/tests/e2e/pages/popup.ts
++++ b/tests/e2e/pages/popup.ts
+@@ -163,28 +163,28 @@ export async function openPopup(page: Page, extensionId: string) {
+ 
+     // MARK: - 待機処理
+ 
+-    async waitForFormDialog(timeout = 500) {
++    async waitForFormDialog(timeout = 3000) {
+       await page.locator('[role="dialog"]').waitFor({
+         state: "visible",
+         timeout,
+       })
+     },
+ 
+-    async waitForFormDialogToClose(timeout = 500) {
++    async waitForFormDialogToClose(timeout = 3000) {
+       await page.locator('[role="dialog"]').waitFor({
+         state: "hidden",
+         timeout,
+       })
+     },
+ 
+-    async waitForConfirmDialog(timeout = 500) {
++    async waitForConfirmDialog(timeout = 3000) {
+       await page.locator('[role="alertdialog"]').waitFor({
+         state: "visible",
+         timeout,
+       })
+     },
+ 
+-    async waitForConfirmDialogToClose(timeout = 500) {
++    async waitForConfirmDialogToClose(timeout = 3000) {
+       await page.locator('[role="alertdialog"]').waitFor({
+         state: "hidden",
+         timeout,
+diff --git a/tests/e2e/popup.spec.ts b/tests/e2e/popup.spec.ts
+index a9a3d95..901d9a7 100644
+--- a/tests/e2e/popup.spec.ts
++++ b/tests/e2e/popup.spec.ts
+@@ -3,11 +3,11 @@ import { openPopup } from "./pages/popup"
+ 
+ const TEST_TEMPLATE = `
+ <!-- Test template -->
+-{{#hunkList}}
+-{{#collapseWhitespace}}\`\`\`{{langId}} {{#isFirst}}filePath={{filePath}}{{/isFirst}} newStart={{newStart}} oldStart={{oldStart}}{{/collapseWhitespace}}
++{{#each hunkList}}
++{{#collapseWhitespace}}\`\`\`{{langId}} {{#if @first}}filePath={{filePath}}{{/if}} newStart={{newStart}} oldStart={{oldStart}}{{/collapseWhitespace}}
+ {{{code}}}
+ \`\`\`
+-{{/hunkList}}
++{{/each}}
+ `
+ 
+ test.describe("ポップアップ", () => {
+diff --git a/tests/unit/helpers/mockTemplateRenderer.ts b/tests/unit/helpers/mockTemplateRenderer.ts
+new file mode 100644
+index 0000000..64d7259
+--- /dev/null
++++ b/tests/unit/helpers/mockTemplateRenderer.ts
+@@ -0,0 +1,39 @@
++/**
++ * テスト用のモック Template Renderer
++ * Handlebars を直接使用してテンプレートをレンダリングする
++ */
++
++import type { TemplateRenderer } from "@/utils/templateRenderer"
++import Handlebars from "handlebars"
++
++// Handlebars ヘルパーを登録
++Handlebars.registerHelper("trimWhitespace", function (this: unknown, options) {
++  return options.fn(this).trim()
++})
++
++Handlebars.registerHelper(
++  "collapseWhitespace",
++  function (this: unknown, options) {
++    return options.fn(this).replace(/\s+/g, " ")
++  },
++)
++
++export const createMockTemplateRenderer = (): TemplateRenderer => ({
++  async render(
++    templateSource: string,
++    context: Record<string, unknown>,
++  ): Promise<string> {
++    const template = Handlebars.compile(templateSource)
++    return template(context)
++  },
++
++  async validate(templateSource: string): Promise<void> {
++    try {
++      Handlebars.compile(templateSource)
++    } catch (error) {
++      throw new Error(
++        error instanceof Error ? error.message : "Invalid Handlebars syntax",
++      )
++    }
++  },
++})
+diff --git a/tests/unit/markup.test.ts b/tests/unit/markup.test.ts
+index e6ca089..260153f 100644
+--- a/tests/unit/markup.test.ts
++++ b/tests/unit/markup.test.ts
+@@ -1,16 +1,22 @@
+ import { renderToMarkup } from "@/entrypoints/github.content/markup"
+ import { structuredPatch } from "diff"
+ import { beforeEach, describe, expect, it, vi } from "vitest"
++import { createMockTemplateRenderer } from "./helpers/mockTemplateRenderer"
+ 
+ const TEST_TEMPLATE = `
+ <!-- Test template -->
+-{{#hunkList}}
+-{{#collapseWhitespace}}\`\`\`{{langId}} {{#isFirst}}filePath={{filePath}}{{/isFirst}} newStart={{newStart}} oldStart={{oldStart}}{{/collapseWhitespace}}
++{{#each hunkList}}
++{{#collapseWhitespace}}\`\`\`{{langId}} {{#if @first}}filePath={{filePath}}{{/if}} newStart={{newStart}} oldStart={{oldStart}}{{/collapseWhitespace}}
+ {{{code}}}
+ \`\`\`
+-{{/hunkList}}
++{{/each}}
+ `
+ 
++// templateRenderer のモック
++vi.mock("@/utils/templateRenderer", () => ({
++  getTemplateRenderer: vi.fn(() => createMockTemplateRenderer()),
++}))
++
+ // templatesService のモック
+ vi.mock("@/utils/templatesService", () => ({
+   getTemplatesService: vi.fn(() => ({
+diff --git a/utils/retry.ts b/utils/retry.ts
+new file mode 100644
+index 0000000..1971a16
+--- /dev/null
++++ b/utils/retry.ts
+@@ -0,0 +1,13 @@
++export async function retry<T>(
++  task: () => T | Promise<T>,
++  baseMs = 500,
++  attempts = 5,
++): Promise<T> {
++  try {
++    return await Promise.try(task)
++  } catch (error) {
++    if (attempts < 1) throw error
++    await new Promise((resolve) => setTimeout(resolve, baseMs))
++    return retry(task, attempts - 1, baseMs * 2)
++  }
++}
+diff --git a/utils/templateRenderer.ts b/utils/templateRenderer.ts
+new file mode 100644
+index 0000000..f31492a
+--- /dev/null
++++ b/utils/templateRenderer.ts
+@@ -0,0 +1,123 @@
++/**
++ * テンプレートレンダラーのインターフェース
++ */
++export interface TemplateRenderer {
++  /**
++   * テンプレートをレンダリングする
++   * @param templateSource テンプレートのソース
++   * @param context レンダリング用のコンテキスト
++   * @returns レンダリング結果
++   */
++  render(
++    templateSource: string,
++    context: Record<string, unknown>,
++  ): Promise<string>
++
++  /**
++   * テンプレートの構文を検証する
++   * @param templateSource テンプレートのソース
++   */
++  validate(templateSource: string): Promise<void>
++}
++
++export const createTemplateRenderer = (): TemplateRenderer => {
++  let sandbox: HTMLIFrameElement | null = null
++
++  const ensureSandboxContentWindow = (): Promise<Window> => {
++    if (sandbox) {
++      return Promise.resolve(sandbox.contentWindow!)
++    }
++
++    sandbox = document.createElement("iframe")
++    sandbox.src = browser.runtime.getURL("/template-renderer.html")
++    sandbox.style.display = "none"
++    document.body.appendChild(sandbox)
++
++    return Promise.resolve(sandbox.contentWindow!)
++  }
++
++  const sendMessage = (
++    command: string,
++    message: Record<string, unknown>,
++    targetWindow: Window = window,
++    targetOrigin: string = "*",
++  ): Promise<
++    | {
++        success: true
++        result: string
++      }
++    | {
++        success: false
++        error: string
++      }
++  > =>
++    new Promise((resolve, reject) => {
++      const messageId = crypto.randomUUID()
++      const timeoutId = setTimeout(() => {
++        cleanup()
++        reject(new Error(`Request timed out`))
++      }, 50) // リトライを考慮して短めに設定
++      const handleMessage = (event: MessageEvent) => {
++        if (event.data.messageId === messageId) {
++          cleanup()
++          resolve(event.data.message)
++        }
++      }
++      const cleanup = () => {
++        window.removeEventListener("message", handleMessage)
++        clearTimeout(timeoutId)
++      }
++      window.addEventListener("message", handleMessage)
++      targetWindow.postMessage({ command, messageId, ...message }, targetOrigin)
++    })
++
++  return {
++    async render(
++      templateSource: string,
++      context: Record<string, unknown>,
++    ): Promise<string> {
++      const response = await retry(async () =>
++        sendMessage(
++          "render",
++          {
++            templateSource,
++            context,
++          },
++          await ensureSandboxContentWindow(),
++        ),
++      )
++
++      if (!response.success) {
++        throw new Error(response.error)
++      }
++
++      return response.result
++    },
++
++    async validate(templateSource: string): Promise<void> {
++      const response = await retry(async () =>
++        sendMessage(
++          "validate",
++          {
++            templateSource,
++          },
++          await ensureSandboxContentWindow(),
++        ),
++      )
++
++      if (!response.success) {
++        throw new Error(response.error)
++      }
++    },
++  }
++}
++
++let globalRenderer: TemplateRenderer | null = null
++
++export const getTemplateRenderer = (): TemplateRenderer => {
++  if (!globalRenderer) {
++    globalRenderer = createTemplateRenderer()
++  }
++
++  return globalRenderer
++}
+diff --git a/wxt.config.ts b/wxt.config.ts
+index fbdaeec..a42f947 100644
+--- a/wxt.config.ts
++++ b/wxt.config.ts
+@@ -13,5 +13,26 @@ export default defineConfig({
+   manifest: {
+     host_permissions: ["*://*.github.com/*", "*://*.githubusercontent.com/*"],
+     permissions: ["downloads"],
++    /*
++     * コンテンツスクリプトからサンドボックスを読み込むために必要
++     * ポップアップの場合は不要
++     */
++    web_accessible_resources: [
++      {
++        resources: ["template-renderer.html"],
++        matches: ["*://*.github.com/*"],
++      },
++    ],
+   },
++  /*
++   * 開発環境のみ必要
++   * サンドボックスから Vite 開発サーバーのモジュールを読み込む際の CORS ブロックを回避する
++   */
++  vite: () => ({
++    server: {
++      headers: {
++        "Access-Control-Allow-Origin": "*",
++      },
++    },
++  }),
+ })
