@@ -7,7 +7,6 @@ import {
 } from "@primer/react"
 import { Banner } from "@primer/react/experimental"
 import { FormEvent, useEffect, useState } from "react"
-import { getTemplateRenderer } from "@/utils/templateRenderer"
 
 interface TemplateFormDialogProps {
   template: Template | null
@@ -63,8 +62,17 @@ export const TemplateFormDialog = ({
 
     // Validate Handlebars template
     try {
-      const renderer = getTemplateRenderer()
-      await renderer.validate(content)
+      const response = await retry(() =>
+        sendMessage(
+          "validate",
+          { templateSource: content },
+          ensureSandboxContentWindow(),
+        ),
+      )
+
+      if (!response.success) {
+        newErrors.content = response.error
+      }
     } catch (err) {
       newErrors.content =
         err instanceof Error ? err.message : "Invalid Handlebars syntax"

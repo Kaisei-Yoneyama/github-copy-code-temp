@@ -1,5 +1,4 @@
 import type { StructuredPatch } from "diff"
-import { getTemplateRenderer } from "@/utils/templateRenderer"
 
 const SAMPLE_TEMPLATE = `
 <!-- Sample template -->
@@ -78,6 +77,28 @@ export const renderToMarkup = async ({
   }
 
   const template = await getTemplate()
+
+  const manifest = browser.runtime.getManifest()
+
+  if (manifest.sandbox) {
+    const response = await retry(() =>
+      sendMessage(
+        "render",
+        {
+          templateSource: template,
+          context,
+        },
+        ensureSandboxContentWindow(),
+      ),
+    )
+
+    if (!response.success) {
+      throw new Error(response.error)
+    }
+
+    return response.result
+  }
+
   const renderer = getTemplateRenderer()
   return renderer.render(template, context)
 }

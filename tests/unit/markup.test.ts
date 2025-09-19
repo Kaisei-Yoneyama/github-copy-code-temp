@@ -1,7 +1,6 @@
 import { renderToMarkup } from "@/entrypoints/github.content/markup"
 import { structuredPatch } from "diff"
 import { beforeEach, describe, expect, it, vi } from "vitest"
-import { createMockTemplateRenderer } from "./helpers/mockTemplateRenderer"
 
 const TEST_TEMPLATE = `
 <!-- Test template -->
@@ -11,11 +10,6 @@ const TEST_TEMPLATE = `
 \`\`\`
 {{/each}}
 `
-
-// templateRenderer のモック
-vi.mock("@/utils/templateRenderer", () => ({
-  getTemplateRenderer: vi.fn(() => createMockTemplateRenderer()),
-}))
 
 // templatesService のモック
 vi.mock("@/utils/templatesService", () => ({
@@ -32,6 +26,7 @@ vi.mock("@/utils/templatesService", () => ({
 
 describe("renderToMarkup", () => {
   beforeEach(() => {
+    // fakeBrowser.reset()
     vi.clearAllMocks()
   })
 

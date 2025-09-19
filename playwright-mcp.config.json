@@ -1,0 +1,11 @@
+{
+  "browser": {
+    "launchOptions": {
+      "headless": false,
+      "args": [
+        "--disable-extensions-except=.output/chrome-mv3",
+        "--load-extension=.output/chrome-mv3"
+      ]
+    }
+  }
+}
